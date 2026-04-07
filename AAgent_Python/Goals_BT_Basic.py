@@ -193,6 +193,9 @@ class GoToBase:
             alpha_coords = {'x': 32.99653, 'y': 0.3717452, 'z': -32.9364967}
             #poll until the agent stops moving
             while calculate_distance(alpha_coords, self.i_state.position) > 1:
+                    if self.a_agent.i_state.isFrozen:
+                        print("frozen")
+
                     # await self.a_agent.send_message("action", "walk_to,BaseAlpha")
                     await asyncio.sleep(0.1) #it is still walking so we wait
             await self.a_agent.send_message("action", "tl")

@@ -4,7 +4,7 @@ import subprocess
 import signal
 import sys
 import asyncio
-from AAgent_BT import AAgent
+from Critter_Agent_BT import AAgent
 
 
 def load_config(json_file):

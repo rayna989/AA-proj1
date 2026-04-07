@@ -309,13 +309,6 @@ class BTRoam:
             BN_MoveToFlower(aagent)
         ])
 
-        # lastly wander branch  turn + move forward (fallback)
-        wander= pt.composites.Sequence(name= "Wander_seq", memory=False)
-        wander.add_children([
-            BN_TurnRandom(aagent),
-            BN_ForwardRandom(aagent)
-        ])
-
         wander = BN_Wander(aagent)
 
 

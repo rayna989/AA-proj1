@@ -1,7 +1,7 @@
 {
     "packs": [
         {
-            "agent_config_file": "AAgent-Critter.json",
+            "agent_config_file": "assignment1/AAgent_Python/AAgent-Critter.json",
             "num_agents": 10
         }
     ]

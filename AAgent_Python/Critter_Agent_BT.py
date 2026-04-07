@@ -5,8 +5,10 @@ import aiohttp
 import asyncio
 import json
 import Sensors
-import Goals_BT_Basic
-import BTRoam
+
+
+import Goals_Critter
+import BTCritter
 
 import tkinter as tk
 from threading import Thread
@@ -155,15 +157,19 @@ class AAgent:
 
         # Reference to the possible goals the agent can execute
         self.goals = {
-            "DoNothing": Goals_BT_Basic.DoNothing(self),
-            "ForwardStop": Goals_BT_Basic.ForwardStop(self),
-            "ForwardDist": Goals_BT_Basic.ForwardDist(self, -1, 5, 10),
-            "Turn": Goals_BT_Basic.Turn(self),
+            
+   "DoNothing": Goals_Critter.DoNothing(self),
+    "ForwardStop": Goals_Critter.ForwardStop(self),
+    "ForwardDist": Goals_Critter.ForwardDist(self, -1, 8, 16),
+    "Turn": Goals_Critter.Turn(self),
+    "EscapeSequence": Goals_Critter.EscapeSequence(self),
+    "MoveToAstronaut": Goals_Critter.MoveToAstronaut(self)
+
         }
 
         # Reference to the possible behaviour trees the agent can execute
         self.bts = {
-            "BTRoam": BTRoam.BTRoam(self)
+            "BTCritter": BTCritter.BTCritter(self)
         }
 
         # Active goal
@@ -406,5 +412,3 @@ if __name__ == "__main__":
             tk_thread.join()
 
         print("Bye!!!")
-
-
