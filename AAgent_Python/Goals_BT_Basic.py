@@ -281,11 +281,11 @@ class MoveToFlower:
             if abs(angle) <= 1e-6:
                 res = await self.approach_flower()
             
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.5)
                 return res
             else:
                 await self.a_agent.send_message("action", "tl" if angle < 0 else "tr")
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.5)
                 return False
 
         except asyncio.CancelledError:
@@ -393,6 +393,77 @@ class Wander:
                 # bigger random turn
                 direction = self._choose_turn_direction()
                 await self._do_action_for(direction, random.uniform(0.35, 0.75), stop_action="nt")
+
+            return True
+
+        except asyncio.CancelledError:
+            await self.a_agent.send_message("action", "stop")
+            await self.a_agent.send_message("action", "nt")
+            return False
+        
+
+class EvadeCritter:
+    def __init__(self, a_agent):
+        self.a_agent = a_agent
+        self.rc_sensor = a_agent.rc_sensor
+        self.i_state = a_agent.i_state
+
+    def _get_critter_rays(self):
+        angles = self.rc_sensor.sensor_rays[Sensors.RayCastSensor.ANGLE]
+        objects = self.rc_sensor.sensor_rays[Sensors.RayCastSensor.OBJECT_INFO]
+
+        critter_rays = []
+        for angle, sensor_data in zip(angles, objects):
+            if sensor_data and sensor_data.get("tag") == "CritterMantaRay":
+                critter_rays.append((angle, sensor_data))
+        return critter_rays
+
+    def _choose_escape_direction(self):
+        """
+        If the critter is mostly on the left, turn right.
+        If the critter is mostly on the right, turn left.
+        More centered critters count more heavily.
+        """
+        critter_rays = self._get_critter_rays()
+
+        left_score = 0.0
+        right_score = 0.0
+
+        for angle, _ in critter_rays:
+            weight = max(0.0, 100.0 - abs(angle))
+            if angle < 0:
+                left_score += weight
+            elif angle > 0:
+                right_score += weight
+            else:
+                left_score += weight * 0.5
+                right_score += weight * 0.5
+
+        if left_score > right_score:
+            return "tr"   # critter is more on left -> turn right away from it
+        elif right_score > left_score:
+            return "tl"   # critter is more on right -> turn left away from it
+        else:
+            return random.choice(["tl", "tr"])
+
+    async def run(self):
+        try:
+            critter_rays = self._get_critter_rays()
+            if not critter_rays:
+                return False
+            print("DETECTEDDDDDD")
+            direction = self._choose_escape_direction()
+            print(direction)
+            # stop whatever we were doing first
+            # await self.a_agent.send_message("action", "stop")
+
+
+            # turn away from the critter
+            await self.a_agent.send_message("action", direction)
+            await self.a_agent.send_message("action", "mf")
+            await asyncio.sleep(random.uniform(0.5, 1.0))
+            await self.a_agent.send_message("action", "stop")
+
 
             return True
 

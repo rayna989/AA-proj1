@@ -279,6 +279,51 @@ class BN_Wander(pt.behaviour.Behaviour):
     def terminate(self, new_status: common.Status):
         if self.my_goal is not None:
             self.my_goal.cancel()
+class BN_IsCritterVisible(pt.behaviour.Behaviour):
+    def __init__(self, aagent):
+        super(BN_IsCritterVisible, self).__init__("BN_IsCritterVisible")
+        self.my_agent = aagent
+
+    def initialise(self):
+        pass
+
+    def update(self):
+        sensor_obj_info = self.my_agent.rc_sensor.sensor_rays[Sensors.RayCastSensor.OBJECT_INFO]
+        for value in sensor_obj_info:
+            if value and value.get("tag") == "CritterMantaRay":
+                return pt.common.Status.SUCCESS
+        return pt.common.Status.FAILURE
+
+    def terminate(self, new_status: common.Status):
+        pass
+
+
+class BN_EvadeCritter(pt.behaviour.Behaviour):
+    def __init__(self, aagent):
+        self.my_goal = None
+        super(BN_EvadeCritter, self).__init__("BN_EvadeCritter")
+        self.my_agent = aagent
+
+    def initialise(self):
+        self.my_goal = asyncio.create_task(
+            Goals_BT_Basic.EvadeCritter(self.my_agent).run()
+        )
+
+    def update(self):
+        if not self.my_goal.done():
+            return pt.common.Status.RUNNING
+        else:
+            try:
+                if self.my_goal.result():
+                    return pt.common.Status.SUCCESS
+                else:
+                    return pt.common.Status.FAILURE
+            except Exception:
+                return pt.common.Status.FAILURE
+
+    def terminate(self, new_status: common.Status):
+        if self.my_goal is not None:
+            self.my_goal.cancel()
 
 # here is the main bt
 # it has the structure of a root selector and then multiple sequences each addressing a different case
@@ -311,15 +356,21 @@ class BTRoam:
 
         wander = BN_Wander(aagent)
 
+        avoid_critter = pt.composites.Sequence(name="AvoidCritter_seq", memory=False)
+        avoid_critter.add_children([
+            BN_IsCritterVisible(aagent),
+            BN_EvadeCritter(aagent)
+        ])
 
         #root selector
         self.root = pt.composites.Selector(name="Root_sel", memory=False)
         self.root.add_children([
-            frozen, 
-            unload, 
+            frozen,
+            avoid_critter,
+            unload,
             collect,
             wander
-            ])
+        ])
 
 
         self.behaviour_tree = pt.trees.BehaviourTree(self.root)
