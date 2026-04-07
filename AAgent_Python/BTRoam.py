@@ -95,7 +95,6 @@ class BN_TurnRandom(pt.behaviour.Behaviour):
 class BN_DetectFlower(pt.behaviour.Behaviour):
     def __init__(self, aagent):
         self.my_goal = None
-        # print("Initializing BN_DetectFlower")
         super(BN_DetectFlower, self).__init__("BN_DetectFlower")
         self.my_agent = aagent
 
@@ -107,11 +106,8 @@ class BN_DetectFlower(pt.behaviour.Behaviour):
         for index, value in enumerate(sensor_obj_info):
             if value:  # there is a hit with an object
                 if value["tag"] == "AlienFlower":  # If it is a flower
-                    # print("Flower detected!")
-                    # print("BN_DetectFlower completed with SUCCESS")
                     return pt.common.Status.SUCCESS
-        # print("No flower...")
-        # print("BN_DetectFlower completed with FAILURE")
+
         return pt.common.Status.FAILURE
 
     def terminate(self, new_status: common.Status):
@@ -149,7 +145,6 @@ class BN_IsInventoryFull(pt.behaviour.Behaviour):
         for item in self.my_agent.i_state.myInventoryList:
             if (item["name"] == "AlienFlower" and item["amount"]>=2):
                 return pt.common.Status.SUCCESS
-                
         return pt.common.Status.FAILURE
     
     def terminate(self, new_status: common.Status):
@@ -258,6 +253,33 @@ class BN_MoveToFlower(pt.behaviour.Behaviour):
         self.my_goal.cancel()
 
 
+class BN_Wander(pt.behaviour.Behaviour):
+    def __init__(self, aagent):
+        self.my_goal = None
+        super(BN_Wander, self).__init__("BN_Wander")
+        self.my_agent = aagent
+
+    def initialise(self):
+        self.my_goal = asyncio.create_task(
+            Goals_BT_Basic.Wander(self.my_agent).run()
+        )
+
+    def update(self):
+        if not self.my_goal.done():
+            return pt.common.Status.RUNNING
+        else:
+            try:
+                if self.my_goal.result():
+                    return pt.common.Status.SUCCESS
+                else:
+                    return pt.common.Status.FAILURE
+            except Exception:
+                return pt.common.Status.FAILURE
+
+    def terminate(self, new_status: common.Status):
+        if self.my_goal is not None:
+            self.my_goal.cancel()
+
 # here is the main bt
 # it has the structure of a root selector and then multiple sequences each addressing a different case
 class BTRoam:
@@ -294,11 +316,17 @@ class BTRoam:
             BN_ForwardRandom(aagent)
         ])
 
+        wander = BN_Wander(aagent)
 
 
         #root selector
         self.root = pt.composites.Selector(name="Root_sel", memory=False)
-        self.root.add_children([frozen, unload, collect, wander])
+        self.root.add_children([
+            frozen, 
+            unload, 
+            collect,
+            wander
+            ])
 
 
         self.behaviour_tree = pt.trees.BehaviourTree(self.root)

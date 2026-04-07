@@ -187,18 +187,22 @@ class GoToBase:
     async def run(self):
         try: 
             #start walking to basealpha
+            await self.a_agent.send_message("action", "stop")
+            await asyncio.sleep(0.5)
             await self.a_agent.send_message("action", "walk_to,BaseAlpha")
-
+            alpha_coords = {'x': 32.99653, 'y': 0.3717452, 'z': -32.9364967}
             #poll until the agent stops moving
-            while self.i_state.onRoute:
+            while calculate_distance(alpha_coords, self.i_state.position) > 1:
+                    # await self.a_agent.send_message("action", "walk_to,BaseAlpha")
                     await asyncio.sleep(0.1) #it is still walking so we wait
-
+            await self.a_agent.send_message("action", "tl")
+            await asyncio.sleep(0.5)
             if self.i_state.currentNamedLoc == "BaseAlpha":
                     return True
             else:
                 return False
         except asyncio.CancelledError:
-            await self.a_agent.send_message("action", "stop")
+            # await self.a_agent.send_message("action", "stop")
             return False
 
 class Unload:
@@ -221,30 +225,175 @@ class MoveToFlower:
         self.i_state = a_agent.i_state
         self.rc_sensor = a_agent.rc_sensor
 
+    def get_smallest_angle(self):
+        smallest_angle_index = None
+        smallest_abs_angle = float("inf")
+
+        angles = self.rc_sensor.sensor_rays[Sensors.RayCastSensor.ANGLE]
+        objects = self.rc_sensor.sensor_rays[Sensors.RayCastSensor.OBJECT_INFO]
+
+        for i, (angle, sensor_data) in enumerate(zip(angles, objects)):
+            if not sensor_data:
+                continue
+            if sensor_data.get("tag") != "AlienFlower":
+                continue
+
+            abs_angle = abs(angle)
+            if abs_angle < smallest_abs_angle:
+                smallest_abs_angle = abs_angle
+                smallest_angle_index = i
+
+        return smallest_angle_index
     
+    async def approach_flower(self, timeout=3.0):
+        def get_flowers_count():
+            inventory = self.a_agent.i_state.myInventoryList
+            return inventory[0]["amount"] if inventory else 0
+
+        original_num_flowers = get_flowers_count()
+        await self.a_agent.send_message("action", "stop")
+        await self.a_agent.send_message("action", "mf")
+
+        poll_interval = 0.5
+
+        while True:
+            await self.a_agent.send_message("action", "mf")
+            if get_flowers_count() > original_num_flowers:
+                await self.a_agent.send_message("action", "stop")
+                return True
+
+            if self.get_smallest_angle() is None:
+                await self.a_agent.send_message("action", "stop")
+                return False
+
+            await asyncio.sleep(poll_interval)
+
     async def run(self):
         try:
-            while True:
-                flower_found= False
-                for sensor_data in self.rc_sensor.sensor_rays[Sensors.RayCastSensor.OBJECT_INFO]:
-                    if sensor_data and sensor_data["tag"] == "AlienFlower":
-                        flower_found= True
-                        #flower found so the agent has to  move towards it
-                        await self.a_agent.send_message("action", "mf")
-                        await asyncio.sleep(0.1)
-                        #stop if close
-                        if math.sqrt(
-                            (sensor_data['x'] - self.i_state.position['x'])**2 +
-                            (sensor_data['y'] - self.i_state.position['y'])**2
-                            (sensor_data['z'] - self.i_state.position['z'])**2) < 0.5:
+            smallest_angle_index = self.get_smallest_angle()
+            if smallest_angle_index is None:
+                await self.a_agent.send_message("action", "nt")
+                return False
+            angle = self.rc_sensor.sensor_rays[Sensors.RayCastSensor.ANGLE][smallest_angle_index]
+            if abs(angle) <= 1e-6:
+                res = await self.approach_flower()
+            
+                await asyncio.sleep(0.1)
+                return res
+            else:
+                await self.a_agent.send_message("action", "tl" if angle < 0 else "tr")
+                await asyncio.sleep(0.1)
+                return False
 
-                            await self.a_agent.send_message("action", "stop")
-                            return True
-                if not flower_found:
-                    return False
-                
+        except asyncio.CancelledError:
+            await self.a_agent.send_message("action", "nt")
+            return False
+class Wander:
+    def __init__(self, a_agent):
+        self.a_agent = a_agent
+        self.rc_sensor = a_agent.rc_sensor
+        self._last_turn = None
+
+    async def _do_action_for(self, action, duration, stop_action="stop"):
+        await self.a_agent.send_message("action", action)
+        await asyncio.sleep(duration)
+        await self.a_agent.send_message("action", stop_action)
+
+    def _choose_turn_direction(self):
+        if self._last_turn is not None and random.random() < 0.65:
+            return self._last_turn
+        self._last_turn = random.choice(["tl", "tr"])
+        return self._last_turn
+
+    def _is_blocking_object(self, sensor_data):
+        if not sensor_data:
+            return False
+        tag = sensor_data.get("tag")
+        return tag in {"Wall", "Rock"}
+
+    def _get_blocked_rays(self):
+        angles = self.rc_sensor.sensor_rays[Sensors.RayCastSensor.ANGLE]
+        objects = self.rc_sensor.sensor_rays[Sensors.RayCastSensor.OBJECT_INFO]
+
+        blocked = []
+        for angle, sensor_data in zip(angles, objects):
+            if self._is_blocking_object(sensor_data):
+                blocked.append((angle, sensor_data))
+        return blocked
+
+    def _front_is_blocked(self, front_angle=25):
+        blocked = self._get_blocked_rays()
+        return any(abs(angle) <= front_angle for angle, _ in blocked)
+
+    def _side_block_scores(self, side_angle_threshold=10):
+        """
+        Returns how blocked the left and right sides are.
+        Lower abs(angle) means more dangerous because it is closer to straight ahead.
+        """
+        blocked = self._get_blocked_rays()
+
+        left_score = 0.0
+        right_score = 0.0
+
+        for angle, _ in blocked:
+            weight = max(0.0, 100.0 - abs(angle))  # more weight if closer to center
+            if angle < -side_angle_threshold:
+                left_score += weight
+            elif angle > side_angle_threshold:
+                right_score += weight
+            else:
+                # near the center, count toward both a bit
+                left_score += weight * 0.5
+                right_score += weight * 0.5
+
+        return left_score, right_score
+
+    def _escape_turn_direction(self):
+        left_score, right_score = self._side_block_scores()
+
+        # if left side is more blocked, turn right
+        if left_score > right_score:
+            self._last_turn = "tr"
+            return "tr"
+
+        # if right side is more blocked, turn left
+        if right_score > left_score:
+            self._last_turn = "tl"
+            return "tl"
+
+        # tie -> keep some persistence or choose randomly
+        return self._choose_turn_direction()
+
+    async def run(self):
+        try:
+            # 1) If something undesirable is in front, escape first
+            if self._front_is_blocked(front_angle=25):
+                direction = self._escape_turn_direction()
+
+                # bigger turn when front is blocked
+                await self._do_action_for(direction, random.uniform(0.45, 0.9), stop_action="nt")
+                return True
+
+            # 2) Otherwise do normal natural wandering
+            r = random.random()
+
+            if r < 0.65:
+                # mostly forward
+                await self._do_action_for("mf", random.uniform(0.8, 1.6))
+
+            elif r < 0.88:
+                # small turn
+                direction = self._choose_turn_direction()
+                await self._do_action_for(direction, random.uniform(0.12, 0.3), stop_action="nt")
+
+            else:
+                # bigger random turn
+                direction = self._choose_turn_direction()
+                await self._do_action_for(direction, random.uniform(0.35, 0.75), stop_action="nt")
+
+            return True
+
         except asyncio.CancelledError:
             await self.a_agent.send_message("action", "stop")
+            await self.a_agent.send_message("action", "nt")
             return False
-        
-
