@@ -199,7 +199,7 @@ class GoToBase:
                     # await self.a_agent.send_message("action", "walk_to,BaseAlpha")
                     await asyncio.sleep(0.1) #it is still walking so we wait
             await self.a_agent.send_message("action", "tl")
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1)
             if self.i_state.currentNamedLoc == "BaseAlpha":
                     return True
             else:
@@ -248,7 +248,7 @@ class MoveToFlower:
 
         return smallest_angle_index
     
-    async def approach_flower(self, timeout=3.0):
+    async def approach_flower(self):
         def get_flowers_count():
             inventory = self.a_agent.i_state.myInventoryList
             return inventory[0]["amount"] if inventory else 0
@@ -257,7 +257,6 @@ class MoveToFlower:
         await self.a_agent.send_message("action", "stop")
         await self.a_agent.send_message("action", "mf")
 
-        poll_interval = 0.5
 
         while True:
             await self.a_agent.send_message("action", "mf")
@@ -269,23 +268,26 @@ class MoveToFlower:
                 await self.a_agent.send_message("action", "stop")
                 return False
 
-            await asyncio.sleep(poll_interval)
+            await asyncio.sleep(0.5)
 
     async def run(self):
         try:
             smallest_angle_index = self.get_smallest_angle()
             if smallest_angle_index is None:
-                await self.a_agent.send_message("action", "nt")
+                # await self.a_agent.send_message("action", "nt")
                 return False
             angle = self.rc_sensor.sensor_rays[Sensors.RayCastSensor.ANGLE][smallest_angle_index]
             if abs(angle) <= 1e-6:
+                print("approaching flower")
                 res = await self.approach_flower()
             
-                await asyncio.sleep(0.5)
+                # await asyncio.sleep(0.5)
                 return res
             else:
-                await self.a_agent.send_message("action", "tl" if angle < 0 else "tr")
-                await asyncio.sleep(0.5)
+                direction = "tl" if angle < 0 else "tr"
+                print("turning", direction)
+                await self.a_agent.send_message("action", direction)
+                await asyncio.sleep(0.05)
                 return False
 
         except asyncio.CancelledError:
@@ -369,36 +371,45 @@ class Wander:
 
     async def run(self):
         try:
-            # 1) If something undesirable is in front, escape first
-            if self._front_is_blocked(front_angle=25):
-                direction = self._escape_turn_direction()
+            while True:
+                # 1) If something undesirable is in front, escape first
+                if self._front_is_blocked(front_angle=25):
+                    direction = self._escape_turn_direction()
 
-                # bigger turn when front is blocked
-                await self._do_action_for(direction, random.uniform(0.45, 0.9), stop_action="nt")
-                return True
+                    # bigger turn when front is blocked
+                    
+                    print("NTING 1")
+                    await self._do_action_for(direction, random.uniform(0.45, 0.9), stop_action="nt")
+                    return True
 
-            # 2) Otherwise do normal natural wandering
-            r = random.random()
+                # 2) Otherwise do normal natural wandering
+                r = random.random()
 
-            if r < 0.65:
-                # mostly forward
-                await self._do_action_for("mf", random.uniform(0.8, 1.6))
+                if r < 0.65:
+                    # mostly forward
+                    await self._do_action_for("mf", random.uniform(0.8, 1.6))
 
-            elif r < 0.88:
-                # small turn
-                direction = self._choose_turn_direction()
-                await self._do_action_for(direction, random.uniform(0.12, 0.3), stop_action="nt")
+                elif r < 0.88:
+                    # small turn
+                    direction = self._choose_turn_direction()
+                    print("NTING 2")
 
-            else:
-                # bigger random turn
-                direction = self._choose_turn_direction()
-                await self._do_action_for(direction, random.uniform(0.35, 0.75), stop_action="nt")
+                    await self._do_action_for(direction, random.uniform(0.12, 0.3), stop_action="nt")
 
-            return True
+                else:
+                    # bigger random turn
+                    direction = self._choose_turn_direction()
+                    print("NTING 3")
+
+                    await self._do_action_for(direction, random.uniform(0.35, 0.75), stop_action="nt")
+
+                await asyncio.sleep(0.2)
+                # return True
 
         except asyncio.CancelledError:
-            await self.a_agent.send_message("action", "stop")
-            await self.a_agent.send_message("action", "nt")
+            print("NTING 4")
+            # await self.a_agent.send_message("action", "stop")
+            # await self.a_agent.send_message("action", "nt")
             return False
         
 
@@ -469,5 +480,7 @@ class EvadeCritter:
 
         except asyncio.CancelledError:
             await self.a_agent.send_message("action", "stop")
+            print("NTING 100")
+
             await self.a_agent.send_message("action", "nt")
             return False

@@ -7,7 +7,7 @@
     "type": "AAgentCritterMantaRay",
     "name": "Critter",
     "team": "",
-    "interactable": true,
+    "interactable": false,
     "spawn_area": "SmallHarvestZone",
     "spawn_point": "",
     "debug_mode": true,

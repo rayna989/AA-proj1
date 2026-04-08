@@ -210,6 +210,7 @@ class AAgent:
         :param msg_content: Content of the message
         """
         msg = {"type": msg_type, "content": msg_content}
+        print(msg)
         msg_json = json.dumps(msg)
         # if msg_type == "action":
         #     print(msg_content)
